@@ -1,0 +1,13 @@
+# Requirements for Katalon Studio Project Analysis Scripts
+
+# Core dependencies (standard library - no installation needed):
+# - xml.etree.ElementTree (XML parsing)
+# - sqlite3 (database)
+# - pathlib (file path handling)
+# - json (JSON serialization)
+# - datetime (timestamps)
+
+# Optional: For enhanced data analysis
+# pandas>=1.3.0
+# matplotlib>=3.3.0
+# seaborn>=0.11.0
