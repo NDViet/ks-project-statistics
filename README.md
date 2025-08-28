@@ -31,7 +31,11 @@ This toolkit is specifically designed for **Katalon Studio** automation projects
 Run the complete analysis pipeline with a single command:
 
 ```bash
+# Default folder depth (2)
 ./bootstrap.sh /path/to/your/katalon/project
+
+# Custom folder depth (3)
+./bootstrap.sh /path/to/your/katalon/project 3
 ```
 
 _Noted: `bootstrap.sh` shell script compatible with Unix-based systems (Linux, macOS). For Windows users, you can use the `bootstrap.bat` batch file instead._
@@ -40,6 +44,35 @@ This will:
 1. Extract all test cases and metadata
 2. Extract all test suites and relationships  
 3. Generate comprehensive statistics report
+4. Generate test case browser report with folder grouping
+
+### Quick Demo with Sample Project
+
+Try the utility immediately with a Katalon Studio sample project:
+
+```bash
+# Clone the sample healthcare project
+git clone git@github.com:katalon-studio-samples/healthcare-hyperexecute.git
+
+# Run analysis with default folder depth (2)
+./bootstrap.sh healthcare-hyperexecute
+
+# Or run with custom folder depth (3) for more detailed grouping
+./bootstrap.sh healthcare-hyperexecute 3
+```
+
+**Expected Output Files:**
+- `healthcare-hyperexecute.db` - SQLite database with extracted data
+- `healthcare-hyperexecute.md` - Comprehensive automation progress report
+- `healthcare-hyperexecute_list_test_cases.md` - Test case browser with folder grouping
+
+**Windows Users:**
+```cmd
+git clone git@github.com:katalon-studio-samples/healthcare-hyperexecute.git
+bootstrap.bat healthcare-hyperexecute
+```
+
+This demo will analyze the sample project's test structure and generate reports showing test automation coverage, organization, and detailed test case listings grouped by folder structure.
 
 ## 📋 What You Get
 
@@ -56,6 +89,7 @@ This will:
 ### Detailed Analysis Reports
 
 - **Test Case Analysis**: Names, descriptions, tags, file paths, and metadata
+- **Test Case Browser**: Organized test case listing grouped by folder structure with collapsible sections
 - **Test Suite Analysis**: All suite types (Test Suites, Dynamic Test Suites, Test Suite Collections)
 - **Test Suite Collection Inventory**: Orchestration configurations and execution settings
 - **Coverage by Module**: Breakdown by project structure with configurable depth
@@ -87,6 +121,13 @@ This will:
 - Features configurable priority tags, test type classifications, and module depth analysis
 - Includes collapsible sections and detailed explanations for better readability
 
+#### 4. Test Case Browser (`test_case_browser.py`)
+- Generates organized test case listings grouped by folder structure
+- Creates collapsible/expandable sections for each folder partition
+- Displays test case names, descriptions, and tags in clean tables
+- Supports configurable folder depth levels for flexible organization
+- Auto-generates filename based on database name (`{database}_list_test_cases.md`)
+
 ### Database Schema
 
 The utility creates a SQLite database with structured tables:
@@ -104,8 +145,11 @@ The utility creates a SQLite database with structured tables:
 
 ### Generate Standard Report
 ```bash
-# Analyze specific project
+# Analyze specific project with default folder depth (2)
 ./bootstrap.sh /path/to/katalon/project
+
+# Analyze with custom folder depth (3)
+./bootstrap.sh /path/to/katalon/project 3
 
 # Generate report from existing database
 python3 scripts/automation_progress_report.py project.db
@@ -124,6 +168,21 @@ python3 scripts/automation_progress_report.py project.db --module-depth 3
 
 # Scan all databases in current directory
 python3 scripts/automation_progress_report.py --scan-all
+```
+
+### Generate Test Case Browser Report
+```bash
+# Generate test case browser with default depth (2)
+python3 scripts/test_case_browser.py project.db
+
+# Generate with custom folder depth (3)
+python3 scripts/test_case_browser.py project.db --module-depth 3
+
+# Generate console output instead of markdown
+python3 scripts/test_case_browser.py project.db --output console
+
+# Save to custom filename
+python3 scripts/test_case_browser.py project.db --save-to custom_report.md
 ```
 
 ### Extract Data Only
@@ -178,11 +237,12 @@ Run the analysis regularly to track:
 
 ### Customization Options
 
-- **Module Depth**: Configure folder hierarchy depth for coverage analysis (`--module-depth`)
+- **Folder Depth**: Configure folder hierarchy depth for both coverage analysis and test case browser (`--module-depth` or bootstrap second argument)
 - **Priority Tags**: Customize P1/P2/P3 priority classifications in the script configuration
 - **Test Type Tags**: Configure UI/API/Smoke/Regression test type classifications
 - **Tag Analysis**: Customize top tags limit and grouping patterns
 - **Report Sections**: All sections included with detailed explanations and collapsible content
+- **Output Formats**: Choose between markdown (with collapsible sections) and console output
 
 ## 📚 Advanced Features
 
@@ -194,6 +254,14 @@ The utility supports all Katalon Studio test suite types:
 - **Dynamic Test Suites**: Filter-based test case selection using tag and name criteria
 - **Test Suite Collections**: Orchestration configurations for running multiple test suites with specific profiles and execution settings
 
+### Test Case Browser Features
+
+- **Folder-based Organization**: Groups test cases by configurable folder depth levels
+- **Collapsible Sections**: Each folder becomes an expandable section in markdown output
+- **Clean Table Format**: Simplified 3-column layout (Test Case, Description, Tags)
+- **Description Cleaning**: Automatically removes step details to focus on main descriptions
+- **Auto-filename Generation**: Creates files named `{database}_list_test_cases.md`
+
 ### Intelligent Analysis Features
 
 - **Dynamic Test Suite Processing**: Automatically creates test_suite_case_links for filtering test suites
@@ -201,6 +269,8 @@ The utility supports all Katalon Studio test suite types:
 - **Priority and Type Classification**: Configurable tag-based categorization (P1/P2/P3, UI/API/Smoke/Regression)
 - **Strategic Recommendations**: Data-driven suggestions based on automation maturity metrics
 - **Collapsible Report Sections**: Organized markdown output with detailed explanations
+- **Flexible Folder Grouping**: Configurable depth levels for both analysis and browsing (1-4+ levels)
+- **Bootstrap Integration**: Single command execution with customizable folder depth parameter
 
 ### Database Integration
 
