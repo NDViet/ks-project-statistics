@@ -46,6 +46,10 @@ if errorlevel 1 exit /b 1
 echo.
 echo Done. Native exe:
 if not exist "%BINARY%" mkdir "%BINARY%"
-mv "%ROOT%\%APP_NAME%.exe" "%BINARY%\"
+move "%ROOT%\%APP_NAME%.exe" "%BINARY%\"
+if errorlevel 1 (
+    echo ERROR: Failed to move exe to binary folder
+    exit /b 1
+)
 echo   %BINARY%\%APP_NAME%.exe
 exit /b 0
