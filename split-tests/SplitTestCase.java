@@ -33,10 +33,42 @@ public class SplitTestCase {
             System.exit(1);
         }
 
-        String testCasePath = args[0];
-        int stepsPerSplit = args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_STEPS_PER_SPLIT;
+        // Parse --project-root flag and filter it out from args
+        Path projectRoot = null;
+        List<String> positionalArgs = new ArrayList<>();
 
-        Path projectRoot = Paths.get(System.getProperty("user.dir"));
+        for (String arg : args) {
+            if (arg.startsWith("--project-root=")) {
+                String rootPath = arg.substring("--project-root=".length());
+                projectRoot = Paths.get(rootPath);
+            } else if (arg.equals("--project-root")) {
+                System.err.println("ERROR: --project-root requires a value. Use --project-root=/path/to/project");
+                System.exit(1);
+            } else {
+                positionalArgs.add(arg);
+            }
+        }
+
+        // Use current directory if --project-root not specified
+        if (projectRoot == null) {
+            projectRoot = Paths.get(System.getProperty("user.dir"));
+        }
+
+        // Validate project root exists
+        if (!Files.exists(projectRoot)) {
+            System.err.println("ERROR: Project root does not exist: " + projectRoot);
+            System.exit(1);
+        }
+
+        // Parse positional arguments
+        if (positionalArgs.isEmpty()) {
+            System.err.println("ERROR: Missing required argument: test-case-id");
+            printUsage();
+            System.exit(1);
+        }
+
+        String testCasePath = positionalArgs.get(0);
+        int stepsPerSplit = positionalArgs.size() > 1 ? Integer.parseInt(positionalArgs.get(1)) : DEFAULT_STEPS_PER_SPLIT;
 
         System.out.println("Project root: " + projectRoot);
         System.out.println("Steps per split: " + stepsPerSplit);
@@ -54,17 +86,40 @@ public class SplitTestCase {
 
     private static void printUsage() {
         System.out.println();
-        System.out.println("Usage: java SplitTestCase.java <test-case-path> [steps-per-split]");
+        System.out.println("Usage:");
+        System.out.println("For Windows:        SplitTestCase.exe [--project-root=<path>] <test-case-id> [steps-per-split]");
+        System.out.println("For Linux/MacOS:    SplitTestCase [--project-root=<path>] <test-case-id> [steps-per-split]");
         System.out.println();
         System.out.println("Arguments:");
-        System.out.println("  test-case-path    Path to test case relative to project root (without .tc extension)");
-        System.out.println("                    Example: \"Test Cases/AI-Generated/UAT/TC4-Complete Application...\"");
+        System.out.println("  test-case-id      Path to test case relative to project root (without .tc extension)");
+        System.out.println("                    On Katalon Studio, you can right click on test case and select 'Copy ID'");
+        System.out.println("                    Example: \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\"");
         System.out.println();
-        System.out.println("  steps-per-split   Optional: Number of steps per split (default: 350)");
+        System.out.println("  steps-per-split   Optional: Number of steps per split part (default: 350)");
         System.out.println();
-        System.out.println("Example:");
-        System.out.println("  java SplitTestCase.java \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\"");
-        System.out.println("  java SplitTestCase.java \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\" 500");
+        System.out.println("Options:");
+        System.out.println("  --project-root=<path>");
+        System.out.println("                    Optional: Explicitly specify the project root directory");
+        System.out.println("                    If not provided, uses the current working directory");
+        System.out.println("                    Example: --project-root=/Users/username/my-katalon-project");
+        System.out.println();
+        System.out.println("Examples:");
+        System.out.println();
+        System.out.println("  Run from project root directory:");
+        System.out.println("    cd \"C:\\path\\to\\katalon-project\"");
+        System.out.println("    SplitTestCase.exe \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\"");
+        System.out.println();
+        System.out.println("  Run from any directory with explicit project root:");
+        System.out.println("    SplitTestCase.exe --project-root=\"C:\\path\\to\\katalon-project\" \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\"");
+        System.out.println();
+        System.out.println("  With custom steps per split:");
+        System.out.println("    SplitTestCase.exe \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\" 500");
+        System.out.println("    SplitTestCase.exe \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\" 500 --project-root=\"C:\\path\\to\\project\"");
+        System.out.println();
+        System.out.println("Note:");
+        System.out.println("  - The --project-root flag can be placed anywhere in the command (beginning, middle, or end)");
+        System.out.println("  - On Linux/MacOS, omit the .exe extension (use SplitTestCase instead of SplitTestCase.exe)");
+        System.out.println("  - On Linux/MacOS, execute `chmod +x SplitTestCase` if you get permission denied");
         System.out.println();
     }
 
