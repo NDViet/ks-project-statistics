@@ -85,41 +85,70 @@ public class SplitTestCase {
     }
 
     private static void printUsage() {
+        // Detect OS and determine binary name
+        String osName = System.getProperty("os.name").toLowerCase();
+        String binaryName;
+        String osLabel;
+
+        if (osName.contains("win")) {
+            binaryName = "SplitTestCase.exe";
+            osLabel = "Windows";
+        } else if (osName.contains("mac") || osName.contains("darwin")) {
+            binaryName = "SplitTestCase-macos";
+            osLabel = "macOS";
+        } else if (osName.contains("nix") || osName.contains("nux") || osName.contains("aix")) {
+            binaryName = "SplitTestCase-linux";
+            osLabel = "Linux";
+        } else {
+            binaryName = "SplitTestCase";
+            osLabel = "Unix";
+        }
+
         System.out.println();
         System.out.println("Usage:");
-        System.out.println("For Windows:        SplitTestCase.exe [--project-root=<path>] <test-case-id> [steps-per-split]");
-        System.out.println("For Linux/MacOS:    SplitTestCase [--project-root=<path>] <test-case-id> [steps-per-split]");
+        System.out.println("  " + binaryName + " [--project-root=<path>] <test-case-id> [steps-per-split]");
         System.out.println();
         System.out.println("Arguments:");
         System.out.println("  test-case-id      Path to test case relative to project root (without .tc extension)");
         System.out.println("                    On Katalon Studio, you can right click on test case and select 'Copy ID'");
         System.out.println("                    Example: \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\"");
         System.out.println();
-        System.out.println("  steps-per-split   Optional: Number of steps per split part (default: 350)");
+        System.out.println("  steps-per-split   Optional: Number of steps per split part (default: " + DEFAULT_STEPS_PER_SPLIT + ")");
         System.out.println();
         System.out.println("Options:");
         System.out.println("  --project-root=<path>");
         System.out.println("                    Optional: Explicitly specify the project root directory");
         System.out.println("                    If not provided, uses the current working directory");
-        System.out.println("                    Example: --project-root=/Users/username/my-katalon-project");
+        System.out.println("                    Example: --project-root=C:\\Users\\username\\my-katalon-project");
         System.out.println();
         System.out.println("Examples:");
         System.out.println();
         System.out.println("  Run from project root directory:");
         System.out.println("    cd \"C:\\path\\to\\katalon-project\"");
-        System.out.println("    SplitTestCase.exe \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\"");
+        System.out.println("    " + binaryName + " \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\"");
         System.out.println();
         System.out.println("  Run from any directory with explicit project root:");
-        System.out.println("    SplitTestCase.exe --project-root=\"C:\\path\\to\\katalon-project\" \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\"");
+        System.out.println("    " + binaryName + " --project-root=\"C:\\path\\to\\katalon-project\" \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\"");
         System.out.println();
         System.out.println("  With custom steps per split:");
-        System.out.println("    SplitTestCase.exe \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\" 500");
-        System.out.println("    SplitTestCase.exe \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\" 500 --project-root=\"C:\\path\\to\\project\"");
+        System.out.println("    " + binaryName + " \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\" 500");
+        System.out.println("    " + binaryName + " \"Test Cases/AI-Generated/UAT/TC4-Complete Application Process\" 500 --project-root=\"C:\\path\\to\\project\"");
+
         System.out.println();
         System.out.println("Note:");
         System.out.println("  - The --project-root flag can be placed anywhere in the command (beginning, middle, or end)");
-        System.out.println("  - On Linux/MacOS, omit the .exe extension (use SplitTestCase instead of SplitTestCase.exe)");
-        System.out.println("  - On Linux/MacOS, execute `chmod +x SplitTestCase` if you get permission denied");
+
+        if (osName.contains("mac") || osName.contains("darwin")) {
+            System.out.println();
+            System.out.println("macOS users:");
+            System.out.println("  - If blocked by Gatekeeper security, run: xattr -d com.apple.quarantine " + binaryName);
+            System.out.println("  - Make executable if needed: chmod +x " + binaryName);
+        } else if (!osName.contains("win")) {
+            System.out.println();
+            System.out.println("Linux users:");
+            System.out.println("  - Make executable if needed: chmod +x " + binaryName);
+        }
+
         System.out.println();
     }
 

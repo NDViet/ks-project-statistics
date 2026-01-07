@@ -54,19 +54,26 @@ jobs:
       - name: Verify binary
         run: |
           ls -lh split-tests/binary/
-          file split-tests/binary/SplitTestCase
-          split-tests/binary/SplitTestCase
+          file split-tests/binary/SplitTestCase-linux
+          split-tests/binary/SplitTestCase-linux
 
       - name: Upload Linux binary
         uses: actions/upload-artifact@v4
         with:
           name: SplitTestCase-linux
-          path: split-tests/binary/SplitTestCase
+          path: split-tests/binary/SplitTestCase-linux
           retention-days: ${{ inputs.retention-days || 30 }}
 
   build-macos:
     name: Build macOS Binary
     runs-on: macos-latest
+    # Note: This produces an ad-hoc signed binary. For proper distribution with
+    # Developer ID signing, add these secrets to your repository:
+    #   - MACOS_CERTIFICATE: Base64 encoded .p12 certificate
+    #   - MACOS_CERTIFICATE_PWD: Certificate password
+    #   - APPLE_ID: Your Apple ID email
+    #   - APPLE_TEAM_ID: Your team ID
+    # Then add certificate import steps before the build.
 
     steps:
       - name: Checkout code
@@ -98,14 +105,16 @@ jobs:
       - name: Verify binary
         run: |
           ls -lh split-tests/binary/
-          file split-tests/binary/SplitTestCase
-          split-tests/binary/SplitTestCase
+          file split-tests/binary/SplitTestCase-macos
+          codesign --verify --verbose split-tests/binary/SplitTestCase-macos
+          codesign --display --verbose=4 split-tests/binary/SplitTestCase-macos
+          split-tests/binary/SplitTestCase-macos
 
       - name: Upload macOS binary
         uses: actions/upload-artifact@v4
         with:
           name: SplitTestCase-macos
-          path: split-tests/binary/SplitTestCase
+          path: split-tests/binary/SplitTestCase-macos
           retention-days: ${{ inputs.retention-days || 30 }}
 
   build-windows:
@@ -178,9 +187,9 @@ jobs:
       - name: Organize binaries
         run: |
           mkdir -p package/SplitTestCase
-          mv package/linux/SplitTestCase package/SplitTestCase/SplitTestCase-linux
-          mv package/macos/SplitTestCase package/SplitTestCase/SplitTestCase-macos
-          mv package/windows/SplitTestCase.exe package/SplitTestCase/SplitTestCase.exe
+          mv package/linux/SplitTestCase-linux package/SplitTestCase/
+          mv package/macos/SplitTestCase-macos package/SplitTestCase/
+          mv package/windows/SplitTestCase.exe package/SplitTestCase/
           chmod +x package/SplitTestCase/SplitTestCase-linux
           chmod +x package/SplitTestCase/SplitTestCase-macos
 

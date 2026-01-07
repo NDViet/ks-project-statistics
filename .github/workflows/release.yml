@@ -48,11 +48,11 @@ jobs:
           name: SplitTestCase-all-platforms.zip
           path: ./artifacts/zip
 
-      - name: Rename binaries for release
+      - name: Prepare binaries for release
         run: |
-          mv ./artifacts/linux/SplitTestCase ./artifacts/SplitTestCase-linux
-          mv ./artifacts/macos/SplitTestCase ./artifacts/SplitTestCase-macos
-          mv ./artifacts/windows/SplitTestCase.exe ./artifacts/SplitTestCase.exe
+          mv ./artifacts/linux/SplitTestCase-linux ./artifacts/
+          mv ./artifacts/macos/SplitTestCase-macos ./artifacts/
+          mv ./artifacts/windows/SplitTestCase.exe ./artifacts/
           chmod +x ./artifacts/SplitTestCase-linux
           chmod +x ./artifacts/SplitTestCase-macos
           ls -lh ./artifacts/

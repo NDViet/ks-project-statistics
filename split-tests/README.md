@@ -54,7 +54,22 @@ After downloading, make the binary executable:
 chmod +x SplitTestCase-macos
 ```
 
-Optionally, rename and move it to your PATH:
+**Important: macOS Security Warning**
+
+Since the binary is not notarized with Apple, macOS Gatekeeper may block it. If you see "cannot be opened because it is from an unidentified developer":
+
+**Option 1: Remove quarantine flag (recommended)**
+```bash
+xattr -d com.apple.quarantine SplitTestCase-macos
+```
+
+**Option 2: Allow in System Settings**
+1. Try to run the binary
+2. Open System Settings → Privacy & Security
+3. Scroll down and click "Open Anyway" next to the security warning
+4. Run the binary again and confirm
+
+After allowing, you can optionally rename and move it to your PATH:
 
 ```bash
 # Rename for convenience
@@ -114,31 +129,52 @@ SplitTestCase.exe "Test Cases/MyTest" 500 --project-root="C:\path\to\project"
 Display usage information:
 
 ```bash
-SplitTestCase.exe
+# The tool automatically shows OS-specific instructions
+SplitTestCase.exe        # Windows
+SplitTestCase-linux      # Linux
+SplitTestCase-macos      # macOS
 ```
+
+The usage message automatically adapts to your operating system, showing the correct binary name and path format.
 
 ## Command-Line Options
 
+The tool automatically detects your operating system and displays appropriate instructions. Run without arguments to see OS-specific help.
+
+### Syntax
+
 ```
-Usage:
-  SplitTestCase.exe [--project-root=<path>] <test-case-id> [steps-per-split]
-
-Arguments:
-  test-case-id      Path to test case relative to project root (without .tc extension)
-                    In Katalon Studio: Right-click test case → "Copy ID"
-                    Example: "Test Cases/AI-Generated/UAT/TC4-Complete Application Process"
-
-  steps-per-split   Optional: Number of steps per split part (default: 350)
-
-Options:
-  --project-root=<path>
-                    Optional: Explicitly specify the project root directory
-                    If not provided, uses the current working directory
+[binary-name] [--project-root=<path>] <test-case-id> [steps-per-split]
 ```
+
+Where `[binary-name]` is:
+- `SplitTestCase.exe` on Windows
+- `SplitTestCase-linux` on Linux
+- `SplitTestCase-macos` on macOS
+
+### Arguments
+
+**test-case-id** (required)
+- Path to test case relative to project root (without .tc extension)
+- In Katalon Studio: Right-click test case → "Copy ID"
+- Example: `"Test Cases/AI-Generated/UAT/TC4-Complete Application Process"`
+
+**steps-per-split** (optional)
+- Number of steps per split part
+- Default: 300
+- Example: `500`
+
+### Options
+
+**--project-root=<path>** (optional)
+- Explicitly specify the project root directory
+- If not provided, uses the current working directory
+- Can be placed anywhere in the command
+- Example: `--project-root=/path/to/project`
 
 ## How It Works
 
-Given a test case with 1000 steps and a split size of 350:
+Given a test case with 1000 steps and a split size of 300 (the default):
 
 1. **Analyzes the test case**
    - Locates the `.tc` file and corresponding Groovy script
@@ -146,12 +182,13 @@ Given a test case with 1000 steps and a split size of 350:
    - Identifies setup/teardown blocks and imports
 
 2. **Creates split test cases** (without setup/teardown)
-   - `OriginalTest-P1` - Steps 1-350
-   - `OriginalTest-P2` - Steps 351-700
-   - `OriginalTest-P3` - Steps 701-1000
+   - `OriginalTest-P1` - Steps 1-300
+   - `OriginalTest-P2` - Steps 301-600
+   - `OriginalTest-P3` - Steps 601-900
+   - `OriginalTest-P4` - Steps 901-1000
 
 3. **Creates Parent test case** (with setup/teardown)
-   - `OriginalTest-Parent` - Calls P1, P2, P3 in sequence
+   - `OriginalTest-Parent` - Calls P1, P2, P3, P4 in sequence
    - Contains all `@SetUp` and `@TearDown` methods
    - Ensures proper initialization and cleanup
 
@@ -173,9 +210,9 @@ Test case file: /path/to/Test Cases/AI-Generated/UAT/TC4-Complete Application Pr
 Script file: /path/to/Scripts/AI-Generated/UAT/TC4-Complete Application Process/Script123456.groovy
 
 Total steps found: 1000
-Steps per split: 350
+Steps per split: 300
 
-Creating 3 split test cases...
+Creating 4 split test cases...
 
 Creating: TC4-Complete Application Process-P1
   Created: TC4-Complete Application Process-P1.tc
@@ -192,14 +229,19 @@ Creating: TC4-Complete Application Process-P3
   Script:  /path/to/Scripts/TC4-Complete Application Process-P3/Script123459.groovy
   Variables: 42 used (filtered from original)
 
+Creating: TC4-Complete Application Process-P4
+  Created: TC4-Complete Application Process-P4.tc
+  Script:  /path/to/Scripts/TC4-Complete Application Process-P4/Script123460.groovy
+  Variables: 28 used (filtered from original)
+
 Creating Parent: TC4-Complete Application Process-Parent
   Created: TC4-Complete Application Process-Parent.tc
-  Script:  /path/to/Scripts/TC4-Complete Application Process-Parent/Script123460.groovy
+  Script:  /path/to/Scripts/TC4-Complete Application Process-Parent/Script123461.groovy
 
 ================================================================================
 Split completed successfully!
 Original test case preserved: TC4-Complete Application Process
-Created 3 split test cases
+Created 4 split test cases
 Created 1 Parent test case
 ================================================================================
 ```
@@ -210,11 +252,11 @@ If the test case is already small enough:
 
 ```
 Total steps found: 253
-Steps per split: 350
+Steps per split: 300
 
 ================================================================================
 Splitting not required!
-Test case has 253 steps, which is within the limit of 350 steps per split.
+Test case has 253 steps, which is within the limit of 300 steps per split.
 No split test cases will be created.
 ================================================================================
 ```
@@ -253,7 +295,7 @@ chmod +x build-native-unix.sh
 ./build-native-unix.sh
 ```
 
-Output: `binary/SplitTestCase` (Linux binary)
+Output: `binary/SplitTestCase-linux`
 
 #### macOS
 
@@ -263,9 +305,38 @@ chmod +x build-native-unix.sh
 ./build-native-unix.sh
 ```
 
-Output: `binary/SplitTestCase` (macOS binary)
+Output: `binary/SplitTestCase-macos`
 
-**Note:** The same build script works for both Linux and macOS, but produces platform-specific binaries. A binary built on Linux will not run on macOS and vice versa.
+**Note:** The build script automatically detects your OS (Linux or macOS) and names the binary accordingly. A binary built on Linux will not run on macOS and vice versa.
+
+#### Code Signing on macOS
+
+The build script automatically signs the macOS binary:
+
+**Ad-hoc signing (default):**
+- Used when no Developer ID certificate is available
+- Binary is signed but not trusted by default
+- Users will need to allow it via System Settings or remove quarantine flag
+
+**Developer ID signing (recommended for distribution):**
+- If you have an Apple Developer account and certificate installed
+- The script automatically detects and uses "Developer ID Application" certificate
+- Provides better trust but still requires notarization for full Gatekeeper approval
+
+**Full notarization (best for public distribution):**
+To fully remove security warnings, notarize the binary after building:
+
+```bash
+# After building, submit for notarization (requires Apple Developer account)
+xcrun notarytool submit binary/SplitTestCase-macos \
+  --apple-id your@email.com \
+  --team-id YOUR_TEAM_ID \
+  --password your-app-specific-password \
+  --wait
+
+# Staple the notarization ticket
+xcrun stapler staple binary/SplitTestCase-macos
+```
 
 ### Run from Source (Without Compilation)
 
@@ -347,9 +418,19 @@ split-tests/
 
 ### Binary not executing (Linux/macOS)
 
-- Make the file executable: `chmod +x SplitTestCase`
+- Make the file executable: `chmod +x SplitTestCase-linux` or `chmod +x SplitTestCase-macos`
 - Verify you're using the correct binary for your platform
 - Check file permissions and ownership
+
+### macOS: "cannot be opened because it is from an unidentified developer"
+
+The binary is signed but not notarized with Apple. Fix this by removing the quarantine flag:
+
+```bash
+xattr -d com.apple.quarantine SplitTestCase-macos
+```
+
+Or allow it through System Settings → Privacy & Security → "Open Anyway"
 
 ### "Permission denied" (Windows)
 
