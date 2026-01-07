@@ -211,47 +211,50 @@ public class SplitTestCase {
         System.out.println("Creating " + splits.size() + " split test cases...");
         System.out.println();
 
-        // Extract prefix (imports and setup code before first step)
-        int prefixEnd = steps.get(0).lineStart;
-        List<String> prefixLines = scriptLines.subList(0, prefixEnd);
+        // NEW APPROACH: Find "Initialize test session" marker
+        int testBodyStart = findTestBodyStart(scriptLines);
 
-        // Find where the suffix actually starts (after the last step's content)
-        int suffixStart = findSuffixStart(scriptLines, steps.get(steps.size() - 1).lineStart);
-        List<String> suffixLines = scriptLines.subList(suffixStart, scriptLines.size());
+        // Extract static prefix (imports, declarations before test body)
+        List<String> staticPrefix = scriptLines.subList(0, testBodyStart);
 
-        // Adjust the last step's lineEnd to exclude the suffix
-        if (!steps.isEmpty()) {
-            steps.get(steps.size() - 1).lineEnd = suffixStart;
+        // Extract @SetUp and @TearDown blocks (for Parent only)
+        List<BlockInfo> setupBlocks = extractAnnotatedBlocks(scriptLines, "@SetUp");
+        List<BlockInfo> teardownBlocks = extractAnnotatedBlocks(scriptLines, "@TearDown");
+
+        // Extract pre-step executable code (between test body start and first step, excluding @SetUp/@TearDown)
+        int firstStepLine = steps.isEmpty() ? scriptLines.size() : steps.get(0).lineStart;
+        List<String> preStepCode = extractPreStepCode(scriptLines, testBodyStart, setupBlocks, teardownBlocks, firstStepLine);
+
+        // Extract @SetUp/@TearDown block content for Parent
+        List<String> setupLines = new ArrayList<>();
+        for (BlockInfo block : setupBlocks) {
+            setupLines.addAll(scriptLines.subList(block.start, block.end));
         }
 
-        // Separate prefix and suffix into imports, setup/teardown, and other code
-        PrefixParts prefixParts = separatePrefixParts(prefixLines);
-        PrefixParts suffixParts = separatePrefixParts(suffixLines);
-
-        // Merge setup/teardown from both prefix and suffix
-        List<String> allSetupLines = new ArrayList<>(prefixParts.setupBlock);
-        List<String> allTeardownLines = new ArrayList<>(prefixParts.teardownBlock);
-        allTeardownLines.addAll(suffixParts.teardownBlock);
-
-        PrefixParts mergedParts = new PrefixParts(prefixParts.importsAndOther, allSetupLines, allTeardownLines);
+        List<String> teardownLines = new ArrayList<>();
+        for (BlockInfo block : teardownBlocks) {
+            teardownLines.addAll(scriptLines.subList(block.start, block.end));
+        }
 
         // Get the directory where test case lives
         Path tcDir = tcPath.getParent();
         Path scriptParentDir = scriptDir.getParent();
 
-        // Create split test cases (without setup/teardown)
+        // Create split test cases (static prefix + pre-step code for P1 only + steps)
         List<String> splitTestNames = new ArrayList<>();
-        for (SplitInfo split : splits) {
+        for (int i = 0; i < splits.size(); i++) {
+            SplitInfo split = splits.get(i);
+            boolean isFirstSplit = (i == 0);
             String splitName = createSplitTestCase(
                 tcDir, scriptParentDir, testCaseName, split,
-                tcContent, prefixParts.importsAndOther, scriptLines, steps
+                tcContent, staticPrefix, preStepCode, isFirstSplit, scriptLines, steps
             );
             splitTestNames.add(splitName);
         }
 
-        // Create Parent test case (with setup/teardown)
+        // Create Parent test case (static prefix + @SetUp + callTestCase + @TearDown)
         createSplitCallTestCase(tcDir, scriptParentDir, testCaseName, splitTestNames,
-                                testCasePath, mergedParts);
+                                testCasePath, staticPrefix, setupLines, teardownLines);
 
         System.out.println();
         System.out.println("=".repeat(80));
@@ -260,166 +263,6 @@ public class SplitTestCase {
         System.out.println("Created " + splits.size() + " split test cases");
         System.out.println("Created 1 Parent test case");
         System.out.println("=".repeat(80));
-    }
-
-    private int findSuffixStart(List<String> scriptLines, int lastStepStart) {
-        // Search backwards from the end of the file to find where suffix content starts
-        // Suffix includes @TearDown, comments, or any other non-step code after the last step
-
-        for (int i = scriptLines.size() - 1; i > lastStepStart; i--) {
-            String line = scriptLines.get(i).trim();
-
-            // Found @TearDown annotation - now search backwards for comments before it
-            if (line.startsWith("@com.kms.katalon.core.annotation.TearDown") ||
-                line.startsWith("@TearDown")) {
-                // Look backwards to find any comments/empty lines before @TearDown
-                int suffixStartLine = i;
-                for (int j = i - 1; j > lastStepStart; j--) {
-                    String prevLine = scriptLines.get(j).trim();
-                    // Include empty lines or comments
-                    if (prevLine.isEmpty() ||
-                        prevLine.startsWith("'") ||
-                        prevLine.startsWith("//") ||
-                        prevLine.startsWith("/*")) {
-                        suffixStartLine = j;
-                    } else {
-                        // Stop when we hit non-comment code
-                        break;
-                    }
-                }
-                return suffixStartLine;
-            }
-
-            // Found comment that looks like a step separator or termination marker
-            if (line.startsWith("'Terminate") || line.startsWith("'Close") ||
-                line.startsWith("//Terminate") || line.startsWith("//Close")) {
-                return i;
-            }
-        }
-
-        // If no suffix markers found, search forward from last step to find first non-step line
-        for (int i = lastStepStart; i < scriptLines.size(); i++) {
-            String line = scriptLines.get(i).trim();
-
-            // Skip empty lines
-            if (line.isEmpty()) {
-                continue;
-            }
-
-            // If we find a step pattern, continue
-            if (STEP_PATTERN.matcher(line).matches()) {
-                continue;
-            }
-
-            // If we find WebUI calls or other step content, continue
-            if (line.startsWith("WebUI.") || line.startsWith("Mobile.") ||
-                line.contains("findTestObject") || line.contains("findTestData")) {
-                continue;
-            }
-
-            // Found non-step content (likely start of suffix)
-            if (line.startsWith("@") || line.startsWith("def ") ||
-                line.startsWith("'Terminate") || line.startsWith("//")) {
-                return i;
-            }
-        }
-
-        // Default: suffix starts at end of file
-        return scriptLines.size();
-    }
-
-    private PrefixParts separatePrefixParts(List<String> prefixLines) {
-        List<String> importsAndOther = new ArrayList<>();
-        List<String> setupBlock = new ArrayList<>();
-        List<String> teardownBlock = new ArrayList<>();
-
-        boolean inSetupBlock = false;
-        boolean inTeardownBlock = false;
-        int braceDepth = 0;
-        List<String> pendingComments = new ArrayList<>();
-
-        for (int i = 0; i < prefixLines.size(); i++) {
-            String line = prefixLines.get(i);
-            String trimmed = line.trim();
-
-            // Check for @SetUp annotation
-            if (trimmed.startsWith("@com.kms.katalon.core.annotation.SetUp") ||
-                trimmed.startsWith("@SetUp")) {
-                inSetupBlock = true;
-                // Add any pending comments before the annotation
-                setupBlock.addAll(pendingComments);
-                pendingComments.clear();
-                setupBlock.add(line);
-                continue;
-            }
-
-            // Check for @TearDown annotation
-            if (trimmed.startsWith("@com.kms.katalon.core.annotation.TearDown") ||
-                trimmed.startsWith("@TearDown")) {
-                inTeardownBlock = true;
-                // Add any pending comments before the annotation
-                teardownBlock.addAll(pendingComments);
-                pendingComments.clear();
-                teardownBlock.add(line);
-                continue;
-            }
-
-            // Track brace depth for setup/teardown blocks
-            if (inSetupBlock || inTeardownBlock) {
-                if (trimmed.contains("{")) {
-                    braceDepth += countChar(line, '{');
-                }
-                if (trimmed.contains("}")) {
-                    braceDepth -= countChar(line, '}');
-                }
-
-                if (inSetupBlock) {
-                    setupBlock.add(line);
-                    if (braceDepth == 0 && trimmed.contains("}")) {
-                        inSetupBlock = false;
-                    }
-                } else if (inTeardownBlock) {
-                    teardownBlock.add(line);
-                    if (braceDepth == 0 && trimmed.contains("}")) {
-                        inTeardownBlock = false;
-                    }
-                }
-            } else {
-                // Check if this is a comment line that might precede @SetUp or @TearDown
-                boolean isComment = trimmed.startsWith("'") || trimmed.startsWith("//") ||
-                                   trimmed.startsWith("/*") || trimmed.startsWith("*");
-                boolean isEmpty = trimmed.isEmpty();
-
-                // Look ahead to see if next non-empty line is @SetUp or @TearDown
-                boolean nextIsAnnotation = false;
-                for (int j = i + 1; j < prefixLines.size(); j++) {
-                    String nextTrimmed = prefixLines.get(j).trim();
-                    if (nextTrimmed.isEmpty()) continue;
-                    if (nextTrimmed.startsWith("@com.kms.katalon.core.annotation.SetUp") ||
-                        nextTrimmed.startsWith("@SetUp") ||
-                        nextTrimmed.startsWith("@com.kms.katalon.core.annotation.TearDown") ||
-                        nextTrimmed.startsWith("@TearDown")) {
-                        nextIsAnnotation = true;
-                    }
-                    break;
-                }
-
-                if ((isComment || isEmpty) && nextIsAnnotation) {
-                    // This is a comment/empty line before an annotation - hold it
-                    pendingComments.add(line);
-                } else {
-                    // Regular code - add pending comments to importsAndOther
-                    importsAndOther.addAll(pendingComments);
-                    pendingComments.clear();
-                    importsAndOther.add(line);
-                }
-            }
-        }
-
-        // Add any remaining pending comments to importsAndOther
-        importsAndOther.addAll(pendingComments);
-
-        return new PrefixParts(importsAndOther, setupBlock, teardownBlock);
     }
 
     private int countChar(String str, char c) {
@@ -471,15 +314,54 @@ public class SplitTestCase {
             }
         }
 
+        // Find where test body ends (before "Terminate test session" or @TearDown)
+        int testBodyEnd = findTestBodyEnd(lines);
+
         // Set end line for each step
         for (int i = 0; i < steps.size() - 1; i++) {
             steps.get(i).lineEnd = steps.get(i + 1).lineStart;
         }
         if (!steps.isEmpty()) {
-            steps.get(steps.size() - 1).lineEnd = lines.size();
+            // Last step ends at the test body end, not at end of file
+            steps.get(steps.size() - 1).lineEnd = testBodyEnd;
         }
 
         return steps;
+    }
+
+    private int findTestBodyEnd(List<String> scriptLines) {
+        // Look for "Terminate test session" marker or @TearDown annotation
+        for (int i = 0; i < scriptLines.size(); i++) {
+            String trimmed = scriptLines.get(i).trim();
+
+            // Found "Terminate test session" marker
+            if (trimmed.startsWith("'Terminate test session") ||
+                trimmed.startsWith("\"Terminate test session")) {
+                return i;
+            }
+
+            // Found @TearDown annotation
+            if (trimmed.startsWith("@com.kms.katalon.core.annotation.TearDown") ||
+                trimmed.startsWith("@TearDown")) {
+                // Look backwards to include any comments before @TearDown
+                int endLine = i;
+                for (int j = i - 1; j >= 0; j--) {
+                    String prevTrimmed = scriptLines.get(j).trim();
+                    if (prevTrimmed.isEmpty() ||
+                        prevTrimmed.startsWith("'") ||
+                        prevTrimmed.startsWith("//") ||
+                        prevTrimmed.startsWith("/*")) {
+                        endLine = j;
+                    } else {
+                        break;
+                    }
+                }
+                return endLine;
+            }
+        }
+
+        // If no marker found, return end of file
+        return scriptLines.size();
     }
 
     private List<SplitInfo> calculateSplits(List<StepInfo> steps) {
@@ -499,16 +381,27 @@ public class SplitTestCase {
     }
 
     private String createSplitTestCase(Path tcDir, Path scriptParentDir, String originalName,
-                                      SplitInfo split, String tcContent, List<String> prefixLines,
+                                      SplitInfo split, String tcContent, List<String> staticPrefix,
+                                      List<String> preStepCode, boolean isFirstSplit,
                                       List<String> allScriptLines, List<StepInfo> allSteps) throws IOException {
 
         String splitName = originalName + "-" + split.suffix;
         System.out.println("Creating: " + splitName);
 
         // Build script content first to scan for variable usage
-        List<String> scriptContent = new ArrayList<>(prefixLines);
+        List<String> scriptContent = new ArrayList<>();
 
-        // Add steps for this split
+        // 1. Add static prefix (imports, declarations) - goes to ALL splits
+        scriptContent.addAll(staticPrefix);
+
+        // 2. Add pre-step executable code ONLY to first split
+        if (isFirstSplit && !preStepCode.isEmpty()) {
+            scriptContent.add(""); // Blank line for readability
+            scriptContent.addAll(preStepCode);
+        }
+
+        // 3. Add steps for this split
+        scriptContent.add(""); // Blank line before steps
         for (StepInfo step : allSteps) {
             if (step.number >= split.stepStart && step.number <= split.stepEnd) {
                 scriptContent.addAll(allScriptLines.subList(step.lineStart, step.lineEnd));
@@ -641,7 +534,8 @@ public class SplitTestCase {
 
     private void createSplitCallTestCase(Path tcDir, Path scriptParentDir, String originalName,
                                         List<String> splitNames, String originalTestCasePath,
-                                        PrefixParts prefixParts) throws IOException {
+                                        List<String> staticPrefix, List<String> setupLines,
+                                        List<String> teardownLines) throws IOException {
 
         String splitCallName = originalName + "-Parent";
         System.out.println();
@@ -668,70 +562,177 @@ public class SplitTestCase {
 
         Path scriptPath = scriptDir.resolve("Script" + System.currentTimeMillis() + ".groovy");
 
-        // Build script with imports, setup, callTestCase statements, and teardown
-        StringBuilder script = new StringBuilder();
+        // Build script with static prefix, setup, callTestCase statements, and teardown
+        List<String> scriptLines = new ArrayList<>();
 
-        // Add imports
-        script.append("import static com.kms.katalon.core.checkpoint.CheckpointFactory.findCheckpoint\n");
-        script.append("import static com.kms.katalon.core.testcase.TestCaseFactory.findTestCase\n");
-        script.append("import static com.kms.katalon.core.testdata.TestDataFactory.findTestData\n");
-        script.append("import static com.kms.katalon.core.testobject.ObjectRepository.findTestObject\n");
-        script.append("import static com.kms.katalon.core.testobject.ObjectRepository.findWindowsObject\n");
-        script.append("import com.kms.katalon.core.checkpoint.Checkpoint as Checkpoint\n");
-        script.append("import com.kms.katalon.core.cucumber.keyword.CucumberBuiltinKeywords as CucumberKW\n");
-        script.append("import com.kms.katalon.core.mobile.keyword.MobileBuiltInKeywords as Mobile\n");
-        script.append("import com.kms.katalon.core.model.FailureHandling as FailureHandling\n");
-        script.append("import com.kms.katalon.core.testcase.TestCase as TestCase\n");
-        script.append("import com.kms.katalon.core.testdata.TestData as TestData\n");
-        script.append("import com.kms.katalon.core.testng.keyword.TestNGBuiltinKeywords as TestNGKW\n");
-        script.append("import com.kms.katalon.core.testobject.TestObject as TestObject\n");
-        script.append("import com.kms.katalon.core.webservice.keyword.WSBuiltInKeywords as WS\n");
-        script.append("import com.kms.katalon.core.webui.keyword.WebUiBuiltInKeywords as WebUI\n");
-        script.append("import com.kms.katalon.core.windows.keyword.WindowsBuiltinKeywords as Windows\n");
-        script.append("import internal.GlobalVariable as GlobalVariable\n");
-        script.append("import org.openqa.selenium.Keys as Keys\n");
-        script.append("\n");
+        // 1. Add static prefix (imports, declarations)
+        scriptLines.addAll(staticPrefix);
 
-        // Add @SetUp block if present
-        if (!prefixParts.setupBlock.isEmpty()) {
-            for (String line : prefixParts.setupBlock) {
-                script.append(line).append("\n");
+        // 1a. Ensure required imports are present for callTestCase
+        String failureHandlingImport = "import com.kms.katalon.core.model.FailureHandling";
+        String findTestCaseImport = "import static com.kms.katalon.core.testcase.TestCaseFactory.findTestCase";
+
+        boolean hasFailureHandlingImport = staticPrefix.stream()
+            .anyMatch(line -> line.trim().equals(failureHandlingImport));
+        boolean hasFindTestCaseImport = staticPrefix.stream()
+            .anyMatch(line -> line.trim().equals(findTestCaseImport));
+
+        // Find the last import line to determine where to insert
+        int lastImportIndex = -1;
+        for (int i = 0; i < scriptLines.size(); i++) {
+            if (scriptLines.get(i).trim().startsWith("import ")) {
+                lastImportIndex = i;
             }
-            script.append("\n");
         }
 
-        // Add callTestCase for each split
+        // Add missing imports after the last import line
+        if (!hasFailureHandlingImport || !hasFindTestCaseImport) {
+            if (lastImportIndex >= 0) {
+                // Insert after last import
+                int insertIndex = lastImportIndex + 1;
+                if (!hasFailureHandlingImport) {
+                    scriptLines.add(insertIndex, failureHandlingImport);
+                    insertIndex++;
+                }
+                if (!hasFindTestCaseImport) {
+                    scriptLines.add(insertIndex, findTestCaseImport);
+                }
+            } else {
+                // No imports found, add at the beginning
+                int insertIndex = 0;
+                if (!hasFailureHandlingImport) {
+                    scriptLines.add(insertIndex, failureHandlingImport);
+                    insertIndex++;
+                }
+                if (!hasFindTestCaseImport) {
+                    scriptLines.add(insertIndex, findTestCaseImport);
+                    insertIndex++;
+                }
+                scriptLines.add(insertIndex, "");
+            }
+        }
+
+        // 2. Add @SetUp block if present
+        if (!setupLines.isEmpty()) {
+            scriptLines.add(""); // Blank line
+            scriptLines.addAll(setupLines);
+        }
+
+        // 3. Add callTestCase for each split
+        scriptLines.add(""); // Blank line
         for (String splitName : splitNames) {
             String suffix = splitName.substring(splitName.lastIndexOf("-") + 1);
             String tcPathForCall = originalTestCasePath + "-" + suffix;
-            script.append("WebUI.callTestCase(findTestCase('").append(tcPathForCall).append("'),\n");
-            script.append("    [:], FailureHandling.STOP_ON_FAILURE)\n");
-            script.append("\n");
+            scriptLines.add("WebUI.callTestCase(findTestCase('" + tcPathForCall + "'),");
+            scriptLines.add("    [:], FailureHandling.STOP_ON_FAILURE)");
+            scriptLines.add(""); // Blank line after each call
         }
 
-        // Add @TearDown block if present
-        if (!prefixParts.teardownBlock.isEmpty()) {
-            for (String line : prefixParts.teardownBlock) {
-                script.append(line).append("\n");
-            }
+        // 4. Add @TearDown block if present
+        if (!teardownLines.isEmpty()) {
+            scriptLines.add(""); // Blank line
+            scriptLines.addAll(teardownLines);
         }
 
-        Files.writeString(scriptPath, script.toString());
+        Files.write(scriptPath, scriptLines);
 
         System.out.println("  Created: " + tcPath.getFileName());
         System.out.println("  Script:  " + scriptPath);
     }
 
-    // Inner classes
-    static class PrefixParts {
-        List<String> importsAndOther;
-        List<String> setupBlock;
-        List<String> teardownBlock;
+    private int findTestBodyStart(List<String> scriptLines) {
+        // Look for "Initialize test session" marker (with single or double quotes)
+        for (int i = 0; i < scriptLines.size(); i++) {
+            String trimmed = scriptLines.get(i).trim();
+            if (trimmed.startsWith("'Initialize test session") ||
+                trimmed.startsWith("\"Initialize test session")) {
+                return i;
+            }
+        }
+        // If no marker found, default to line 0 (entire file is test body)
+        return 0;
+    }
 
-        PrefixParts(List<String> importsAndOther, List<String> setupBlock, List<String> teardownBlock) {
-            this.importsAndOther = importsAndOther;
-            this.setupBlock = setupBlock;
-            this.teardownBlock = teardownBlock;
+    private List<BlockInfo> extractAnnotatedBlocks(List<String> scriptLines, String annotation) {
+        List<BlockInfo> blocks = new ArrayList<>();
+        int i = 0;
+
+        while (i < scriptLines.size()) {
+            String trimmed = scriptLines.get(i).trim();
+
+            // Found @SetUp or @TearDown annotation
+            if (trimmed.startsWith(annotation) ||
+                trimmed.startsWith("@com.kms.katalon.core.annotation." + annotation.substring(1))) {
+
+                int blockStart = i;
+                i++; // Move to next line (should be def method)
+
+                // Find the end of the block by tracking braces
+                int braceDepth = 0;
+                while (i < scriptLines.size()) {
+                    String line = scriptLines.get(i);
+                    for (char c : line.toCharArray()) {
+                        if (c == '{') braceDepth++;
+                        if (c == '}') braceDepth--;
+                    }
+                    i++;
+                    if (braceDepth == 0 && line.trim().endsWith("}")) {
+                        break;
+                    }
+                }
+
+                blocks.add(new BlockInfo(blockStart, i));
+            } else {
+                i++;
+            }
+        }
+
+        return blocks;
+    }
+
+    private List<String> extractPreStepCode(List<String> scriptLines, int testBodyStart,
+                                            List<BlockInfo> setupBlocks, List<BlockInfo> teardownBlocks,
+                                            int firstStepLine) {
+        List<String> preStepCode = new ArrayList<>();
+
+        // Collect all @SetUp/@TearDown line ranges
+        Set<Integer> excludedLines = new HashSet<>();
+        for (BlockInfo block : setupBlocks) {
+            for (int i = block.start; i < block.end; i++) {
+                excludedLines.add(i);
+            }
+        }
+        for (BlockInfo block : teardownBlocks) {
+            for (int i = block.start; i < block.end; i++) {
+                excludedLines.add(i);
+            }
+        }
+
+        // Extract lines between testBodyStart and firstStepLine, excluding @SetUp/@TearDown
+        for (int i = testBodyStart; i < firstStepLine; i++) {
+            if (!excludedLines.contains(i)) {
+                String line = scriptLines.get(i);
+                String trimmed = line.trim();
+                // Skip the marker line itself and empty lines
+                if (!trimmed.startsWith("'Initialize test session") &&
+                    !trimmed.startsWith("\"Initialize test session") &&
+                    !trimmed.isEmpty()) {
+                    preStepCode.add(line);
+                }
+            }
+        }
+
+        return preStepCode;
+    }
+
+    // Inner classes
+    static class BlockInfo {
+        int start;
+        int end;
+
+        BlockInfo(int start, int end) {
+            this.start = start;
+            this.end = end;
         }
     }
 
