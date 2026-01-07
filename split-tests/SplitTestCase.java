@@ -30,7 +30,7 @@ public class SplitTestCase {
     public static void main(String[] args) {
         if (args.length == 0) {
             printUsage();
-            System.exit(1);
+            System.exit(0);
         }
 
         // Parse --project-root flag and filter it out from args
