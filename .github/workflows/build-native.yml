@@ -20,8 +20,8 @@ on:
         default: 30
 
 jobs:
-  build-unix:
-    name: Build Unix Binary (Linux/macOS)
+  build-linux:
+    name: Build Linux Binary
     runs-on: ubuntu-latest
 
     steps:
@@ -57,10 +57,54 @@ jobs:
           file split-tests/binary/SplitTestCase
           split-tests/binary/SplitTestCase
 
-      - name: Upload Unix binary
+      - name: Upload Linux binary
         uses: actions/upload-artifact@v4
         with:
-          name: SplitTestCase
+          name: SplitTestCase-linux
+          path: split-tests/binary/SplitTestCase
+          retention-days: ${{ inputs.retention-days || 30 }}
+
+  build-macos:
+    name: Build macOS Binary
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          native-image-job-reports: 'true'
+
+      - name: Verify GraalVM installation
+        run: |
+          echo "GRAALVM_HOME: $GRAALVM_HOME"
+          echo "JAVA_HOME: $JAVA_HOME"
+          java --version
+          native-image --version
+
+      - name: Make build script executable
+        run: chmod +x split-tests/build-native-unix.sh
+
+      - name: Build native binary
+        run: |
+          cd split-tests
+          ./build-native-unix.sh
+
+      - name: Verify binary
+        run: |
+          ls -lh split-tests/binary/
+          file split-tests/binary/SplitTestCase
+          split-tests/binary/SplitTestCase
+
+      - name: Upload macOS binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: SplitTestCase-macos
           path: split-tests/binary/SplitTestCase
           retention-days: ${{ inputs.retention-days || 30 }}
 
@@ -109,31 +153,44 @@ jobs:
 
   package:
     name: Package Combined Archive
-    needs: [build-unix, build-windows]
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download Unix binary
+      - name: Download Linux binary
         uses: actions/download-artifact@v4
         with:
-          name: SplitTestCase
-          path: ./package
+          name: SplitTestCase-linux
+          path: ./package/linux
+
+      - name: Download macOS binary
+        uses: actions/download-artifact@v4
+        with:
+          name: SplitTestCase-macos
+          path: ./package/macos
 
       - name: Download Windows binary
         uses: actions/download-artifact@v4
         with:
           name: SplitTestCase.exe
-          path: ./package
+          path: ./package/windows
 
-      - name: Make Unix binary executable
-        run: chmod +x ./package/SplitTestCase
+      - name: Organize binaries
+        run: |
+          mkdir -p package/SplitTestCase
+          mv package/linux/SplitTestCase package/SplitTestCase/SplitTestCase-linux
+          mv package/macos/SplitTestCase package/SplitTestCase/SplitTestCase-macos
+          mv package/windows/SplitTestCase.exe package/SplitTestCase/SplitTestCase.exe
+          chmod +x package/SplitTestCase/SplitTestCase-linux
+          chmod +x package/SplitTestCase/SplitTestCase-macos
 
       - name: Create zip archive
         run: |
           cd package
-          zip -r ../SplitTestCase-all-platforms.zip SplitTestCase SplitTestCase.exe
+          zip -r ../SplitTestCase-all-platforms.zip SplitTestCase/
           cd ..
           ls -lh SplitTestCase-all-platforms.zip
+          unzip -l SplitTestCase-all-platforms.zip
 
       - name: Upload combined archive
         uses: actions/upload-artifact@v4

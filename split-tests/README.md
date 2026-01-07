@@ -21,23 +21,49 @@ When Katalon Studio test cases grow too large (hundreds or thousands of steps), 
 
 Download the latest release from [GitHub Releases](/../../releases):
 
+- **Linux**: `SplitTestCase-linux`
+- **macOS**: `SplitTestCase-macos`
 - **Windows**: `SplitTestCase.exe`
-- **Linux/macOS**: `SplitTestCase`
-- **All platforms**: `SplitTestCase-all-platforms.zip`
+- **All platforms**: `SplitTestCase-all-platforms.zip` (contains all three binaries)
 
-### Linux/macOS Setup
+### Linux Setup
 
 After downloading, make the binary executable:
 
 ```bash
-chmod +x SplitTestCase
+chmod +x SplitTestCase-linux
 ```
 
-Optionally, move it to your PATH:
+Optionally, rename and move it to your PATH:
 
 ```bash
-# Example: Move to ~/bin or /usr/local/bin
+# Rename for convenience
+mv SplitTestCase-linux SplitTestCase
+
+# Move to PATH
 mv SplitTestCase ~/bin/
+# or
+sudo mv SplitTestCase /usr/local/bin/
+```
+
+### macOS Setup
+
+After downloading, make the binary executable:
+
+```bash
+chmod +x SplitTestCase-macos
+```
+
+Optionally, rename and move it to your PATH:
+
+```bash
+# Rename for convenience
+mv SplitTestCase-macos SplitTestCase
+
+# Move to PATH
+mv SplitTestCase ~/bin/
+# or
+sudo mv SplitTestCase /usr/local/bin/
 ```
 
 ### Windows Setup
@@ -55,7 +81,11 @@ Run from your Katalon project root directory:
 cd C:\path\to\katalon-project
 SplitTestCase.exe "Test Cases/AI-Generated/UAT/TC4-Complete Application Process"
 
-# Linux/macOS
+# Linux (assuming you renamed the binary to SplitTestCase)
+cd /path/to/katalon-project
+SplitTestCase "Test Cases/AI-Generated/UAT/TC4-Complete Application Process"
+
+# macOS (assuming you renamed the binary to SplitTestCase)
 cd /path/to/katalon-project
 SplitTestCase "Test Cases/AI-Generated/UAT/TC4-Complete Application Process"
 ```
@@ -215,7 +245,7 @@ build-native-windows.bat
 
 Output: `binary/SplitTestCase.exe`
 
-#### Linux/macOS
+#### Linux
 
 ```bash
 cd split-tests
@@ -223,7 +253,19 @@ chmod +x build-native-unix.sh
 ./build-native-unix.sh
 ```
 
-Output: `binary/SplitTestCase`
+Output: `binary/SplitTestCase` (Linux binary)
+
+#### macOS
+
+```bash
+cd split-tests
+chmod +x build-native-unix.sh
+./build-native-unix.sh
+```
+
+Output: `binary/SplitTestCase` (macOS binary)
+
+**Note:** The same build script works for both Linux and macOS, but produces platform-specific binaries. A binary built on Linux will not run on macOS and vice versa.
 
 ### Run from Source (Without Compilation)
 
@@ -242,16 +284,27 @@ This project includes automated workflows:
 #### Build Workflow
 
 Triggers on push/PR to master:
-- Builds binaries for all platforms
+- Builds separate binaries for Linux, macOS, and Windows
+- Creates a combined .zip archive with all binaries
 - Uploads artifacts (30-day retention)
 - Verifies binaries work correctly
+
+Available artifacts:
+- `SplitTestCase-linux` - Linux binary
+- `SplitTestCase-macos` - macOS binary
+- `SplitTestCase.exe` - Windows binary
+- `SplitTestCase-all-platforms.zip` - All binaries in one archive
 
 #### Release Workflow
 
 Triggers on version tag push:
-- Builds binaries for all platforms
-- Creates GitHub Release
-- Attaches binaries as release assets
+- Builds binaries for all platforms (Linux, macOS, Windows)
+- Creates GitHub Release with auto-generated release notes
+- Attaches all binaries as release assets:
+  - `SplitTestCase-linux`
+  - `SplitTestCase-macos`
+  - `SplitTestCase.exe`
+  - `SplitTestCase-all-platforms.zip`
 
 **Create a release:**
 
