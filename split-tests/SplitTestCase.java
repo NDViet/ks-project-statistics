@@ -161,6 +161,16 @@ public class SplitTestCase {
         System.out.println("Steps per split: " + stepsPerSplit);
         System.out.println();
 
+        // Check if splitting is necessary
+        if (steps.size() <= stepsPerSplit) {
+            System.out.println("=" .repeat(80));
+            System.out.println("Splitting not required!");
+            System.out.println("Test case has " + steps.size() + " steps, which is within the limit of " + stepsPerSplit + " steps per split.");
+            System.out.println("No split test cases will be created.");
+            System.out.println("=" .repeat(80));
+            return;
+        }
+
         // Read original test case content
         String tcContent = Files.readString(tcPath);
 
