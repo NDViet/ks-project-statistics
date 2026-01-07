@@ -19,7 +19,7 @@ When Katalon Studio test cases grow too large (hundreds or thousands of steps), 
 
 ### Download Pre-built Binaries
 
-Download the latest release from [GitHub Releases](/../../../releases):
+Download the latest release from [GitHub Releases](/../../releases):
 
 - **Windows**: `SplitTestCase.exe`
 - **Linux/macOS**: `SplitTestCase`
