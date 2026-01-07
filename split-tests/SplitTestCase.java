@@ -17,7 +17,7 @@ import java.util.stream.*;
 public class SplitTestCase {
 
     private static final Pattern STEP_PATTERN = Pattern.compile("^\\s*\"Step\\s+(\\d+):\\s*(.+)\"\\s*$");
-    private static final int DEFAULT_STEPS_PER_SPLIT = 350;
+    private static final int DEFAULT_STEPS_PER_SPLIT = 300;
 
     private final Path projectRoot;
     private final int stepsPerSplit;
