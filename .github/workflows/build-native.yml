@@ -11,6 +11,13 @@ on:
     paths:
       - 'split-tests/**'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      retention-days:
+        description: 'Artifact retention days'
+        required: false
+        type: number
+        default: 30
 
 jobs:
   build-unix:
@@ -48,14 +55,14 @@ jobs:
         run: |
           ls -lh split-tests/binary/
           file split-tests/binary/SplitTestCase
-          split-tests/binary/SplitTestCase --help || true
+          split-tests/binary/SplitTestCase
 
       - name: Upload Unix binary
         uses: actions/upload-artifact@v4
         with:
           name: SplitTestCase
           path: split-tests/binary/SplitTestCase
-          retention-days: 30
+          retention-days: ${{ inputs.retention-days || 30 }}
 
   build-windows:
     name: Build Windows Binary
@@ -89,7 +96,7 @@ jobs:
       - name: Verify binary
         run: |
           dir split-tests\binary\
-          split-tests\binary\SplitTestCase.exe --help
+          split-tests\binary\SplitTestCase.exe
         shell: cmd
         continue-on-error: true
 
@@ -98,4 +105,4 @@ jobs:
         with:
           name: SplitTestCase.exe
           path: split-tests/binary/SplitTestCase.exe
-          retention-days: 30
+          retention-days: ${{ inputs.retention-days || 30 }}

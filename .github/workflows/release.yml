@@ -1,0 +1,49 @@
+name: Release Native Binaries
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*.*-*'
+
+jobs:
+  build:
+    name: Build Binaries
+    uses: ./.github/workflows/build-native.yml
+    with:
+      retention-days: 30
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Unix binary
+        uses: actions/download-artifact@v4
+        with:
+          name: SplitTestCase
+          path: ./artifacts/unix
+
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: SplitTestCase.exe
+          path: ./artifacts/windows
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
+          generate_release_notes: true
+          files: |
+            ./artifacts/unix/SplitTestCase
+            ./artifacts/windows/SplitTestCase.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
