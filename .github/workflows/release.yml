@@ -36,6 +36,12 @@ jobs:
           name: SplitTestCase.exe
           path: ./artifacts/windows
 
+      - name: Download combined archive
+        uses: actions/download-artifact@v4
+        with:
+          name: SplitTestCase-all-platforms.zip
+          path: ./artifacts/zip
+
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
@@ -45,5 +51,6 @@ jobs:
           files: |
             ./artifacts/unix/SplitTestCase
             ./artifacts/windows/SplitTestCase.exe
+            ./artifacts/zip/SplitTestCase-all-platforms.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

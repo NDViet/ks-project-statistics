@@ -106,3 +106,38 @@ jobs:
           name: SplitTestCase.exe
           path: split-tests/binary/SplitTestCase.exe
           retention-days: ${{ inputs.retention-days || 30 }}
+
+  package:
+    name: Package Combined Archive
+    needs: [build-unix, build-windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Unix binary
+        uses: actions/download-artifact@v4
+        with:
+          name: SplitTestCase
+          path: ./package
+
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: SplitTestCase.exe
+          path: ./package
+
+      - name: Make Unix binary executable
+        run: chmod +x ./package/SplitTestCase
+
+      - name: Create zip archive
+        run: |
+          cd package
+          zip -r ../SplitTestCase-all-platforms.zip SplitTestCase SplitTestCase.exe
+          cd ..
+          ls -lh SplitTestCase-all-platforms.zip
+
+      - name: Upload combined archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: SplitTestCase-all-platforms.zip
+          path: SplitTestCase-all-platforms.zip
+          retention-days: ${{ inputs.retention-days || 30 }}
