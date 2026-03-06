@@ -17,7 +17,7 @@ import java.util.stream.*;
 public class SplitTestCase {
 
     private static final Pattern STEP_PATTERN = Pattern.compile("^\\s*\"Step\\s+(\\d+):\\s*(.+)\"\\s*$");
-    private static final int DEFAULT_STEPS_PER_SPLIT = 300;
+    private static final int DEFAULT_STEPS_PER_SPLIT = 250;
 
     private final Path projectRoot;
     private final int stepsPerSplit;
@@ -165,6 +165,7 @@ public class SplitTestCase {
 
         // Find the script
         String testCaseName = tcPath.getFileName().toString().replace(".tc", "");
+        String updatedTestCaseName = testCaseName + "-Updated";
         Path scriptDir = findScriptDirectory(testCasePath, testCaseName);
 
         if (scriptDir == null || !Files.exists(scriptDir)) {
@@ -176,8 +177,15 @@ public class SplitTestCase {
             throw new IOException("Groovy script not found in: " + scriptDir);
         }
 
-        System.out.println("Test case file: " + tcPath);
-        System.out.println("Script file: " + scriptPath);
+        // Compute paths for the updated (output) test case
+        Path updatedTcPath = tcPath.getParent().resolve(updatedTestCaseName + ".tc");
+        Path updatedScriptDir = scriptDir.getParent().resolve(updatedTestCaseName);
+        Path updatedScriptPath = updatedScriptDir.resolve(scriptPath.getFileName());
+
+        System.out.println("Original test case file: " + tcPath);
+        System.out.println("Original script file:    " + scriptPath);
+        System.out.println("Updated test case file:  " + updatedTcPath);
+        System.out.println("Updated script file:     " + updatedScriptPath);
         System.out.println();
 
         // Extract steps
@@ -200,15 +208,24 @@ public class SplitTestCase {
             return;
         }
 
-        // Read original test case content
-        String tcContent = Files.readString(tcPath);
+        // Create updated script directory and copy .tc file (with updated name inside)
+        Files.createDirectories(updatedScriptDir);
+
+        String tcContent = new String(Files.readAllBytes(tcPath));
+        tcContent = tcContent.replace("<name>" + testCaseName + "</name>",
+                                      "<name>" + updatedTestCaseName + "</name>");
+        Files.write(updatedTcPath, tcContent.getBytes());
+        System.out.println("Copied .tc file: " + updatedTcPath);
+
+        // Copy groovy script to updated location (will be overwritten by rewrite)
+        Files.copy(scriptPath, updatedScriptPath, StandardCopyOption.REPLACE_EXISTING);
 
         // Read original script
         List<String> scriptLines = Files.readAllLines(scriptPath);
 
         // Calculate splits
         List<SplitInfo> splits = calculateSplits(steps);
-        System.out.println("Creating " + splits.size() + " split test cases...");
+        System.out.println("Splitting into " + splits.size() + " closure parts...");
         System.out.println();
 
         // NEW APPROACH: Find "Initialize test session" marker
@@ -217,7 +234,7 @@ public class SplitTestCase {
         // Extract static prefix (imports, declarations before test body)
         List<String> staticPrefix = scriptLines.subList(0, testBodyStart);
 
-        // Extract @SetUp and @TearDown blocks (for Parent only)
+        // Extract @SetUp and @TearDown blocks
         List<BlockInfo> setupBlocks = extractAnnotatedBlocks(scriptLines, "@SetUp");
         List<BlockInfo> teardownBlocks = extractAnnotatedBlocks(scriptLines, "@TearDown");
 
@@ -236,32 +253,36 @@ public class SplitTestCase {
             teardownLines.addAll(scriptLines.subList(block.start, block.end));
         }
 
-        // Get the directory where test case lives
-        Path tcDir = tcPath.getParent();
-        Path scriptParentDir = scriptDir.getParent();
-
-        // Create split test cases (static prefix + pre-step code for P1 only + steps)
-        List<String> splitTestNames = new ArrayList<>();
-        for (int i = 0; i < splits.size(); i++) {
-            SplitInfo split = splits.get(i);
-            boolean isFirstSplit = (i == 0);
-            String splitName = createSplitTestCase(
-                tcDir, scriptParentDir, testCaseName, split,
-                tcContent, staticPrefix, preStepCode, isFirstSplit, scriptLines, steps
-            );
-            splitTestNames.add(splitName);
+        // Detect 'Initialize test session' marker line content
+        String initMarkerLine = null;
+        if (testBodyStart < scriptLines.size()) {
+            String trimmed = scriptLines.get(testBodyStart).trim();
+            if (trimmed.startsWith("'Initialize test session") || trimmed.startsWith("\"Initialize test session")) {
+                initMarkerLine = scriptLines.get(testBodyStart);
+            }
         }
 
-        // Create Parent test case (static prefix + @SetUp + callTestCase + @TearDown)
-        createSplitCallTestCase(tcDir, scriptParentDir, testCaseName, splitTestNames,
-                                testCasePath, staticPrefix, setupLines, teardownLines);
+        // Detect 'Terminate test session' marker line content
+        String terminateMarkerLine = null;
+        int testBodyEnd = steps.isEmpty() ? scriptLines.size() : steps.get(steps.size() - 1).lineEnd;
+        if (testBodyEnd < scriptLines.size()) {
+            String trimmed = scriptLines.get(testBodyEnd).trim();
+            if (trimmed.startsWith("'Terminate test session") || trimmed.startsWith("\"Terminate test session")) {
+                terminateMarkerLine = scriptLines.get(testBodyEnd);
+            }
+        }
+
+        // Rewrite script with closure-based approach into the updated copy
+        rewriteScriptWithClosures(updatedScriptPath, staticPrefix, initMarkerLine, preStepCode,
+                                  setupLines, teardownLines, splits, steps, scriptLines,
+                                  terminateMarkerLine);
 
         System.out.println();
         System.out.println("=".repeat(80));
         System.out.println("Split completed successfully!");
-        System.out.println("Original test case preserved: " + testCaseName);
-        System.out.println("Created " + splits.size() + " split test cases");
-        System.out.println("Created 1 Parent test case");
+        System.out.println("Original test case preserved: " + tcPath);
+        System.out.println("Updated test case created:    " + updatedTcPath);
+        System.out.println("Script rewritten with " + splits.size() + " closure parts");
         System.out.println("=".repeat(80));
     }
 
@@ -380,264 +401,87 @@ public class SplitTestCase {
         return splits;
     }
 
-    private String createSplitTestCase(Path tcDir, Path scriptParentDir, String originalName,
-                                      SplitInfo split, String tcContent, List<String> staticPrefix,
-                                      List<String> preStepCode, boolean isFirstSplit,
-                                      List<String> allScriptLines, List<StepInfo> allSteps) throws IOException {
+    private void rewriteScriptWithClosures(Path scriptPath, List<String> staticPrefix,
+                                           String initMarkerLine, List<String> preStepCode,
+                                           List<String> setupLines, List<String> teardownLines,
+                                           List<SplitInfo> splits, List<StepInfo> steps,
+                                           List<String> allScriptLines,
+                                           String terminateMarkerLine) throws IOException {
+        List<String> newScript = new ArrayList<>();
 
-        String splitName = originalName + "-" + split.suffix;
-        System.out.println("Creating: " + splitName);
+        // 1. Static prefix (imports, declarations) - strip trailing blank lines
+        int prefixEnd = staticPrefix.size();
+        while (prefixEnd > 0 && staticPrefix.get(prefixEnd - 1).trim().isEmpty()) {
+            prefixEnd--;
+        }
+        newScript.addAll(staticPrefix.subList(0, prefixEnd));
 
-        // Build script content first to scan for variable usage
-        List<String> scriptContent = new ArrayList<>();
-
-        // 1. Add static prefix (imports, declarations) - goes to ALL splits
-        scriptContent.addAll(staticPrefix);
-
-        // 2. Add pre-step executable code ONLY to first split
-        if (isFirstSplit && !preStepCode.isEmpty()) {
-            scriptContent.add(""); // Blank line for readability
-            scriptContent.addAll(preStepCode);
+        // 2. 'Initialize test session' marker
+        if (initMarkerLine != null) {
+            newScript.add("");
+            newScript.add(initMarkerLine);
         }
 
-        // 3. Add steps for this split
-        scriptContent.add(""); // Blank line before steps
-        for (StepInfo step : allSteps) {
-            if (step.number >= split.stepStart && step.number <= split.stepEnd) {
-                scriptContent.addAll(allScriptLines.subList(step.lineStart, step.lineEnd));
-            }
-        }
-
-        // Scan script for used variables
-        Set<String> usedVariables = findUsedVariables(scriptContent);
-
-        // Create .tc file
-        Path newTcPath = tcDir.resolve(splitName + ".tc");
-
-        // Modify XML content and filter variables
-        String newTcContent = tcContent;
-        newTcContent = newTcContent.replaceFirst(
-            "(<name>)(.*?)(</name>)",
-            "$1" + splitName + "$3"
-        );
-        newTcContent = newTcContent.replaceFirst(
-            "(<testCaseGuid>)(.*?)(</testCaseGuid>)",
-            "$1" + UUID.randomUUID().toString() + "$3"
-        );
-
-        // Update description
-        newTcContent = newTcContent.replaceFirst(
-            "(<description>)(.*?)(</description>)",
-            "$1$2 (Split " + split.suffix + ", steps " + split.stepStart + "-" + split.stepEnd + ")$3"
-        );
-
-        // Filter variables to only include used ones
-        newTcContent = filterVariables(newTcContent, usedVariables);
-
-        Files.writeString(newTcPath, newTcContent);
-
-        // Create script
-        Path newScriptDir = scriptParentDir.resolve(splitName);
-        Files.createDirectories(newScriptDir);
-
-        Path newScriptPath = newScriptDir.resolve("Script" + System.currentTimeMillis() + ".groovy");
-
-        // Write script content (already built above)
-        Files.write(newScriptPath, scriptContent);
-
-        System.out.println("  Created: " + newTcPath.getFileName());
-        System.out.println("  Script:  " + newScriptPath);
-        System.out.println("  Variables: " + usedVariables.size() + " used (filtered from original)");
-
-        return splitName;
-    }
-
-    private Set<String> findUsedVariables(List<String> scriptLines) {
-        Set<String> usedVariables = new HashSet<>();
-
-        // Join all script lines to search
-        String scriptContent = String.join("\n", scriptLines);
-
-        // Pattern to match variable references in Groovy/Katalon scripts
-        // Looks for: variable_name or ${variable_name} or GlobalVariable.variable_name
-        Pattern variablePattern = Pattern.compile(
-            "\\b([a-zA-Z_][a-zA-Z0-9_]*_[a-zA-Z0-9_]+)\\b|" +  // snake_case variables
-            "\\$\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}|" +              // ${variable}
-            "GlobalVariable\\.([a-zA-Z_][a-zA-Z0-9_]*)"         // GlobalVariable.name
-        );
-
-        Matcher matcher = variablePattern.matcher(scriptContent);
-        while (matcher.find()) {
-            for (int i = 1; i <= matcher.groupCount(); i++) {
-                String var = matcher.group(i);
-                if (var != null && !var.isEmpty()) {
-                    usedVariables.add(var);
-                }
-            }
-        }
-
-        return usedVariables;
-    }
-
-    private String filterVariables(String tcContent, Set<String> usedVariables) {
-        // Parse XML and filter <variable> elements
-        StringBuilder result = new StringBuilder();
-        String[] lines = tcContent.split("\n", -1);  // -1 to preserve trailing empty strings
-
-        boolean inVariableBlock = false;
-        StringBuilder currentVariable = new StringBuilder();
-        String variableName = null;
-
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i];
-            String trimmed = line.trim();
-
-            // Check if entering a <variable> block
-            if (trimmed.startsWith("<variable>")) {
-                inVariableBlock = true;
-                currentVariable = new StringBuilder();
-                currentVariable.append(line);
-                if (i < lines.length - 1) currentVariable.append("\n");
-                variableName = null;
-                continue;
-            }
-
-            if (inVariableBlock) {
-                currentVariable.append(line);
-                if (i < lines.length - 1) currentVariable.append("\n");
-
-                // Extract variable name
-                if (trimmed.startsWith("<name>") && variableName == null) {
-                    variableName = trimmed.replaceAll("</?name>", "").trim();
-                }
-
-                // Check if closing </variable>
-                if (trimmed.equals("</variable>")) {
-                    inVariableBlock = false;
-
-                    // Only include if variable is used
-                    if (variableName != null && usedVariables.contains(variableName)) {
-                        result.append(currentVariable);
-                    }
-
-                    currentVariable = new StringBuilder();
-                    variableName = null;
-                }
-            } else {
-                result.append(line);
-                if (i < lines.length - 1) result.append("\n");
-            }
-        }
-
-        return result.toString();
-    }
-
-    private void createSplitCallTestCase(Path tcDir, Path scriptParentDir, String originalName,
-                                        List<String> splitNames, String originalTestCasePath,
-                                        List<String> staticPrefix, List<String> setupLines,
-                                        List<String> teardownLines) throws IOException {
-
-        String splitCallName = originalName + "-Parent";
-        System.out.println();
-        System.out.println("Creating Parent: " + splitCallName);
-
-        // Create .tc file
-        Path tcPath = tcDir.resolve(splitCallName + ".tc");
-
-        String tcContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-            "<TestCaseEntity>\n" +
-            "   <description>Calls all split test cases for " + originalName + " in sequence</description>\n" +
-            "   <name>" + splitCallName + "</name>\n" +
-            "   <tag></tag>\n" +
-            "   <comment></comment>\n" +
-            "   <recordOption>OTHER</recordOption>\n" +
-            "   <testCaseGuid>" + UUID.randomUUID().toString() + "</testCaseGuid>\n" +
-            "</TestCaseEntity>\n";
-
-        Files.writeString(tcPath, tcContent);
-
-        // Create script
-        Path scriptDir = scriptParentDir.resolve(splitCallName);
-        Files.createDirectories(scriptDir);
-
-        Path scriptPath = scriptDir.resolve("Script" + System.currentTimeMillis() + ".groovy");
-
-        // Build script with static prefix, setup, callTestCase statements, and teardown
-        List<String> scriptLines = new ArrayList<>();
-
-        // 1. Add static prefix (imports, declarations)
-        scriptLines.addAll(staticPrefix);
-
-        // 1a. Ensure required imports are present for callTestCase
-        String failureHandlingImport = "import com.kms.katalon.core.model.FailureHandling";
-        String findTestCaseImport = "import static com.kms.katalon.core.testcase.TestCaseFactory.findTestCase";
-
-        boolean hasFailureHandlingImport = staticPrefix.stream()
-            .anyMatch(line -> line.trim().equals(failureHandlingImport));
-        boolean hasFindTestCaseImport = staticPrefix.stream()
-            .anyMatch(line -> line.trim().equals(findTestCaseImport));
-
-        // Find the last import line to determine where to insert
-        int lastImportIndex = -1;
-        for (int i = 0; i < scriptLines.size(); i++) {
-            if (scriptLines.get(i).trim().startsWith("import ")) {
-                lastImportIndex = i;
-            }
-        }
-
-        // Add missing imports after the last import line
-        if (!hasFailureHandlingImport || !hasFindTestCaseImport) {
-            if (lastImportIndex >= 0) {
-                // Insert after last import
-                int insertIndex = lastImportIndex + 1;
-                if (!hasFailureHandlingImport) {
-                    scriptLines.add(insertIndex, failureHandlingImport);
-                    insertIndex++;
-                }
-                if (!hasFindTestCaseImport) {
-                    scriptLines.add(insertIndex, findTestCaseImport);
-                }
-            } else {
-                // No imports found, add at the beginning
-                int insertIndex = 0;
-                if (!hasFailureHandlingImport) {
-                    scriptLines.add(insertIndex, failureHandlingImport);
-                    insertIndex++;
-                }
-                if (!hasFindTestCaseImport) {
-                    scriptLines.add(insertIndex, findTestCaseImport);
-                    insertIndex++;
-                }
-                scriptLines.add(insertIndex, "");
-            }
-        }
-
-        // 2. Add @SetUp block if present
+        // 3. @SetUp blocks
         if (!setupLines.isEmpty()) {
-            scriptLines.add(""); // Blank line
-            scriptLines.addAll(setupLines);
+            newScript.add("");
+            newScript.addAll(setupLines);
         }
 
-        // 3. Add callTestCase for each split
-        scriptLines.add(""); // Blank line
-        for (String splitName : splitNames) {
-            String suffix = splitName.substring(splitName.lastIndexOf("-") + 1);
-            String tcPathForCall = originalTestCasePath + "-" + suffix;
-            scriptLines.add("WebUI.callTestCase(findTestCase('" + tcPathForCall + "'),");
-            scriptLines.add("    [:], FailureHandling.STOP_ON_FAILURE)");
-            scriptLines.add(""); // Blank line after each call
+        // 4. Pre-step code
+        if (!preStepCode.isEmpty()) {
+            newScript.add("");
+            newScript.addAll(preStepCode);
         }
 
-        // 4. Add @TearDown block if present
+        // 5. Define a closure for each split except the last
+        List<String> closureNames = new ArrayList<>();
+        for (int i = 0; i < splits.size() - 1; i++) {
+            SplitInfo split = splits.get(i);
+            String closureName = "part" + split.index;
+            closureNames.add(closureName);
+
+            newScript.add("");
+            newScript.add("def " + closureName + " = {");
+            for (StepInfo step : steps) {
+                if (step.number >= split.stepStart && step.number <= split.stepEnd) {
+                    for (String line : allScriptLines.subList(step.lineStart, step.lineEnd)) {
+                        newScript.add(line.isEmpty() ? "" : "\t" + line);
+                    }
+                }
+            }
+            newScript.add("}");
+        }
+
+        // 6. Call each closure in sequence
+        newScript.add("");
+        for (String closureName : closureNames) {
+            newScript.add(closureName + "()");
+            newScript.add("");
+        }
+
+        // 7. Last split steps written directly in the main script body
+        SplitInfo lastSplit = splits.get(splits.size() - 1);
+        for (StepInfo step : steps) {
+            if (step.number >= lastSplit.stepStart && step.number <= lastSplit.stepEnd) {
+                newScript.addAll(allScriptLines.subList(step.lineStart, step.lineEnd));
+            }
+        }
+
+        // 8. 'Terminate test session' marker
+        if (terminateMarkerLine != null) {
+            newScript.add("");
+            newScript.add(terminateMarkerLine);
+        }
+
+        // 9. @TearDown blocks
         if (!teardownLines.isEmpty()) {
-            scriptLines.add(""); // Blank line
-            scriptLines.addAll(teardownLines);
+            newScript.add("");
+            newScript.addAll(teardownLines);
         }
 
-        Files.write(scriptPath, scriptLines);
-
-        System.out.println("  Created: " + tcPath.getFileName());
-        System.out.println("  Script:  " + scriptPath);
+        Files.write(scriptPath, newScript);
+        System.out.println("  Rewritten: " + scriptPath);
     }
 
     private int findTestBodyStart(List<String> scriptLines) {

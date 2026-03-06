@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TestCaseEntity>
+   <description>Dummy test case for split testing</description>
+   <name>dummy_script_test</name>
+   <tag></tag>
+   <comment></comment>
+   <recordOption>OTHER</recordOption>
+   <testCaseGuid>aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee</testCaseGuid>
+</TestCaseEntity>

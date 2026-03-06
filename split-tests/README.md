@@ -346,6 +346,66 @@ Java 11+ supports running `.java` files directly:
 java SplitTestCase.java "Test Cases/MyTest"
 ```
 
+## Testing with the Dummy Script
+
+A sample Groovy script (`dummy_script_test.groovy`) is included for testing. It contains 710 steps and mirrors a real Katalon test case. The mock Katalon project structure is already set up under `test-project/`.
+
+### Run
+
+```bash
+cd split-tests
+./run-test.sh
+```
+
+### View Output
+
+The rewritten script is at:
+
+```
+split-tests/test-project/Scripts/dummy_script_test/dummy_script_test.groovy
+```
+
+### Expected Output
+
+```
+================================================================================
+Splitting test case: Test Cases/dummy_script_test
+================================================================================
+Test case file: /tmp/ks-test-project/Test Cases/dummy_script_test.tc
+Script file: /tmp/ks-test-project/Scripts/dummy_script_test/dummy_script_test.groovy
+
+Total steps found: 710
+Steps per split: 300
+
+Splitting into 3 closure parts...
+
+  Rewritten: /tmp/ks-test-project/Scripts/dummy_script_test/dummy_script_test.groovy
+
+================================================================================
+Split completed successfully!
+Script rewritten with 3 closure parts
+================================================================================
+```
+
+The rewritten script groups steps 1–300 and 301–600 into closures (`part1`, `part2`), calls them inline, then writes steps 601–710 directly in the main body:
+
+```groovy
+def part1 = {
+    "Step 1: ..."
+    // ...
+}
+def part2 = {
+    "Step 301: ..."
+    // ...
+}
+
+part1
+part2
+
+"Step 601: ..."
+// ... remaining steps written directly
+```
+
 ## CI/CD Integration
 
 ### GitHub Actions

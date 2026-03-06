@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(java:*)",
+      "Bash(chmod +x:*)",
+      "Bash(./run-test.sh:*)"
+    ]
+  }
+}
